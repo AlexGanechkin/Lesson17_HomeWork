@@ -84,24 +84,23 @@ class MoviesView(Resource):
         movies_list = movies_schema.dump(movies)
 
         if not movies_list:
+            if Director.query.get(director) is None:
+                return "Режиссера с запрошенным id нет в базе", 404
+            elif Genre.query.get(genre) is None:
+                return "Жанра с запрошенным id нет в базе", 404
+
             if director is not None and genre is not None:
                 return f"Фильмы режиссера - {Director.query.get(director).name} - " \
                        f"в жанре - {Genre.query.get(genre).name} - в базе не найдены", 404
             elif director is not None:
-                if Director.query.get(director) is not None:
-                    return f"Фильмы режиссера - {Director.query.get(director).name} - в базе не найдены", 404
-                else:
-                    return "Режиссера с запрошенным id нет в базе", 404
+                return f"Фильмы режиссера - {Director.query.get(director).name} - в базе не найдены", 404
             elif genre is not None:
-                if Genre.query.get(genre) is not None:
-                    return f"Фильмы в жанре - {Genre.query.get(genre).name} - в базе не найдены", 404
-                else:
-                    return "Жанра с запрошенным id нет в базе", 404
+                return f"Фильмы в жанре - {Genre.query.get(genre).name} - в базе не найдены", 404
 
         return movies_list, 200
 
 
-@movie_ns.route('/<int:id>')
+@movie_ns.route('/<int:movie_id>')
 class MovieView(Resource):
     """ Рут получает один фильм со всей информацией по нему из базы """
 
@@ -113,6 +112,49 @@ class MovieView(Resource):
         if not movie:
             return "Фильм c запрошенным id не найден", 404
         return movie_schema.dump(movie), 200
+
+    def put(self, movie_id):
+        """ Метод обновляет данные по фильму с запрошенным id, есть проверка наличия фильма в базе """
+        json_data = request.json
+        movie = Movie.query.get(movie_id)
+        if not movie:
+            return "Фильм c запрошенным id не найден", 404
+
+        movie.title = json_data.get('title')
+        movie.description = json_data.get('description')
+        movie.trailer = json_data.get('trailer')
+        movie.year = json_data.get('year')
+        movie.rating = json_data.get('rating')
+        movie.genre_id = json_data.get('genre_id')
+        movie.director_id = json_data.get('director_id')
+
+        db.session.add(movie)
+        db.session.commit()
+        return f"Фильм с id - {movie_id} - был обновлен", 204
+
+    def delete(self, movie_id):
+        """ Метод удаляет фильм с запрошенным id, есть проверка наличия фильма в базе """
+        movie = Movie.query.get(movie_id)
+        if not movie:
+            return "Фильм c запрошенным id не найден", 404
+        db.session.delete(movie)
+        db.session.commit()
+        return f"Фильм с id - {movie_id} - был удален из базы", 204
+
+
+@movie_ns.route('/')
+class MovieView(Resource):
+    """ Рут добавляет новый фильм в базу """
+
+    def post(self):
+        """ Метод добавляет новый фильм в базу, есть проверка на дубли """
+        movie_json = request.json
+        new_movie = Movie(**movie_json)
+        if Movie.query.get(movie_json['id']):
+            return "Фильм с таким id уже присутствует в базе", 404
+        db.session.add(new_movie)
+        db.session.commit()
+        return "Новый фильм добавлен в базу", 201
 
 
 @director_ns.route('/')
