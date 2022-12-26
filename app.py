@@ -20,7 +20,7 @@ genre_ns = api.namespace('genres')
 
 class Movie(db.Model):
     __tablename__ = 'movie'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(255))
     description = db.Column(db.String(255))
     trailer = db.Column(db.String(255))
@@ -34,13 +34,13 @@ class Movie(db.Model):
 
 class Director(db.Model):
     __tablename__ = 'director'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255))
 
 
 class Genre(db.Model):
     __tablename__ = 'genre'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(255))
 
 
@@ -55,13 +55,40 @@ class MovieSchema(Schema):
     director_id = fields.Int()
 
 
+class DirectorSchema(Schema):
+    id = fields.Int(dump_only=True)
+    name = fields.Str()
+
+
+class GenreSchema(Schema):
+    id = fields.Int(dump_only=True)
+    name = fields.Str()
+
+
 movies_schema = MovieSchema(many=True)
 movie_schema = MovieSchema()
+
+directors_schema = DirectorSchema(many=True)
+director_schema = DirectorSchema()
+
+genres_schema = GenreSchema(many=True)
+genre_schema = GenreSchema()
 
 
 @movie_ns.route('/')
 class MoviesView(Resource):
-    """ Рут получает список фильмов со всей информацией по каждому фильму из базы """
+    """ Рут получает список фильмов из базы, а также добавляет новый фильм в базу """
+
+    def post(self):
+        """ Метод добавляет новый фильм в базу, есть проверка на дубли """
+        movie_json = request.json
+        new_movie = Movie(**movie_json)
+        movie_titles = Movie.query.filter(Movie.title == new_movie.title).count()
+        if movie_titles > 0:
+            return "Фильм с таким названием уже присутствует в базе", 404
+        db.session.add(new_movie)
+        db.session.commit()
+        return "Новый фильм добавлен в базу", 201
 
     def get(self):
         """
@@ -142,31 +169,22 @@ class MovieView(Resource):
         return f"Фильм с id - {movie_id} - был удален из базы", 204
 
 
-@movie_ns.route('/')
-class MovieView(Resource):
-    """ Рут добавляет новый фильм в базу """
-
-    def post(self):
-        """ Метод добавляет новый фильм в базу, есть проверка на дубли """
-        movie_json = request.json
-        new_movie = Movie(**movie_json)
-        if Movie.query.get(movie_json['id']):
-            return "Фильм с таким id уже присутствует в базе", 404
-        db.session.add(new_movie)
-        db.session.commit()
-        return "Новый фильм добавлен в базу", 201
-
-
 @director_ns.route('/')
 class DirectorView(Resource):
-    """ Рут добавляет нового режиссера в базу """
+    """ Рут получает список режиссеров из базы, а также добавляет нового режиссера в базу """
+
+    def get(self):
+        """ Метод получает полный список режиссеров, имеющихся в базе """
+        directors = Director.query.all()
+        return directors_schema.dump(directors)
 
     def post(self):
         """ Метод добавляет нового режиссера в базу, есть проверка на дубли """
         director_json = request.json
         new_director = Director(**director_json)
-        if Director.query.get(director_json['id']):
-            return "Режиссер с таким id уже присутствует в базе", 404
+        director_names = Director.query.filter(Director.name == new_director.name).count()
+        if director_names > 0:
+            return "Режиссер с таким именем уже присутствует в базе", 404
         db.session.add(new_director)
         db.session.commit()
         return "Новый режиссер добавлен в базу", 201
@@ -174,7 +192,16 @@ class DirectorView(Resource):
 
 @director_ns.route('/<int:director_id>')
 class DirectorView(Resource):
-    """ Рут обрабатывает режиссера уже существующего в базе """
+    """ Рут обрабатывает режиссеров уже существующих в базе """
+
+    def get(self, director_id):
+        """
+        Метод получает режиссера по запрошенному id, а также проверяет есть ли вообще в базе режиссер с таким id
+        """
+        director = Director.query.get(director_id)
+        if not director:
+            return "Режиссер c запрошенным id не найден", 404
+        return director_schema.dump(director), 200
 
     def put(self, director_id):
         """ Метод обновляет данные по режиссеру с запрошенным id, есть проверка наличия режиссера в базе """
@@ -199,14 +226,20 @@ class DirectorView(Resource):
 
 @genre_ns.route('/')
 class GenreView(Resource):
-    """ Рут добавляет новый жанр в базу """
+    """ Рут получает список жанров из базы, а также добавляет новый жанр в базу """
+
+    def get(self):
+        """ Метод получает полный список жанров, имеющихся в базе """
+        genres = Genre.query.all()
+        return genres_schema.dump(genres)
 
     def post(self):
         """ Метод добавляет новый жанр в базу, есть проверка на дубли """
         genre_json = request.json
         new_genre = Genre(**genre_json)
-        if Genre.query.get(genre_json['id']):
-            return "Жанр с таким id уже присутствует в базе", 404
+        genre_names = Genre.query.filter(Genre.name == new_genre.name).count()
+        if genre_names > 0:
+            return "Жанр с таким названием уже присутствует в базе", 404
         db.session.add(new_genre)
         db.session.commit()
         return "Новый жанр добавлен в базу", 201
@@ -215,6 +248,16 @@ class GenreView(Resource):
 @genre_ns.route('/<int:genre_id>')
 class GenreView(Resource):
     """ Рут обрабатывает жанр уже существующий в базе """
+
+    def get(self, genre_id):
+        """
+        Метод получает жанр по запрошенному id, а также проверяет есть ли вообще в базе жанр с таким id
+        """
+        genre = Genre.query.get(genre_id)
+        genre_movies = db.session.query(Movie.title).filter(Movie.genre_id == genre_id).all()
+        if not genre:
+            return "Жанр c запрошенным id не найден", 404
+        return (genre_schema.dump(genre), movies_schema.dump(genre_movies)), 200
 
     def put(self, genre_id):
         """ Метод обновляет данные по жанру с запрошенным id, есть проверка наличия режиссера в базе """
